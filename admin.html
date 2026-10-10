@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EVU // RECRUITMENT ADMIN</title>
+<meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><symbol id="emb" viewBox="0 0 120 120" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="60" cy="60" r="56"/><circle cx="60" cy="60" r="42" stroke-dasharray="3 5"/><path d="M30 32 L60 92 L90 32"/><path d="M45 32 L60 62 L75 32"/><path d="M60 4V18M60 102V116M4 60H18M102 60H116"/></symbol></svg>
+<div class="bgfx" aria-hidden="true"><div class="g"></div><div class="n"></div><div class="s"></div></div>
+
+<div class="alogin" id="gate">
+  <div class="panel" id="gateBox"><div class="who">ЗАГРУЗКА...</div></div>
+</div>
+
+<div class="shell" id="shell" hidden>
+  <aside class="side">
+    <a class="brand" href="index.html"><svg viewBox="0 0 120 120" aria-hidden="true" style="color:#fff"><use href="#emb"/></svg><span><b>EVU // ADMIN</b><small>RECRUITMENT CONTROL</small></span></a>
+    <nav class="tabs" id="tabs" aria-label="Разделы панели">
+      <button class="tab on" data-t="overview" type="button">Обзор</button>
+      <button class="tab" data-t="apps" type="button">Заявки <span class="bd" id="newBd" hidden>0</span></button>
+      <button class="tab" data-t="logs" type="button">Журнал</button>
+      <button class="tab" data-t="settings" type="button">Настройки</button>
+    </nav>
+    <div class="me"><span>ВЫ ВОШЛИ КАК</span><b id="meName">—</b><span id="meRole">—</span><br><button class="btn sm dim" id="logout" type="button" style="margin-top:10px">Выйти</button></div>
+  </aside>
+  <div class="mainc">
+    <div class="top"><h1 id="vt">Обзор</h1><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="pill" id="pill"><i></i><span id="pillT">...</span></span><button class="btn sm" id="refresh" type="button">Обновить</button></div></div>
+    <div class="view" id="view"></div>
+  </div>
+</div>
+<div class="demo" id="demo" hidden>DEMO MODE // ДАННЫЕ ТОЛЬКО В ЭТОМ БРАУЗЕРЕ // РЕАЛЬНЫЕ ПРАВА, DISCORD И БАЗА ПОДКЛЮЧАЮТСЯ ЧЕРЕЗ SUPABASE</div>
+
+<script src="config.js"></script>
+<script src="core.js"></script>
+<script>
+(function () {
+"use strict";
+var X = EVU, $ = X.$, $$ = X.$$, esc = X.esc, api = X.api, ST = X.ST;
+var RANK = { viewer: 1, reviewer: 2, owner: 3 }, me = null, tab = "overview", apps = [], F = { q: "", st: "all", sort: "desc" }, SEL = {}, settings = null;
+if (!X.LIVE) $("#demo").hidden = false;
+var rk = function () { return RANK[me && me.role] || 0; };
+var can = function (n) { return rk() >= n; };
+function er(e) { X.toast(e && e.message || "Ошибка", true); }
+function setPill(open) { $("#pill").classList.toggle("open", !!open); $("#pillT").textContent = "РЕКРУТИНГ: " + (open ? "ОТКРЫТ" : "ЗАКРЫТ"); }
+var ACT = { status: "Изменён статус", note: "Добавлена заметка", role: "Выдача роли Discord", role_retry: "Повтор выдачи роли", delete: "Удаление заявок", import: "Импорт заявок", settings: "Изменены настройки", submit: "Подана заявка", notify_error: "Ошибка уведомления" };
+var RS = { none: "—", granted: "ВЫДАНА", failed: "ОШИБКА", pending: "ОЖИДАНИЕ" };
+var bdg = function (s) { return '<span class="bdg ' + esc(s) + '">' + esc(ST[s] || s) + "</span>"; };
+function logLine(l) {
+  var d = l.details || {}, t = "";
+  if (l.action === "status") t = (ST[d.from] || d.from || "?") + " → " + (ST[d.to] || d.to) + (d.note ? " · «" + d.note + "»" : "");
+  else if (l.action === "role" || l.action === "role_retry") t = d.ok ? "успешно" + (d.demo ? " (демо)" : "") : "ошибка: " + (d.error || "");
+  else if (l.action === "delete") t = "удалено: " + d.count; else if (l.action === "import") t = "импортировано: " + d.imported + ", пропущено: " + d.skipped;
+  else if (l.action === "settings") t = "набор: " + (d.open ? "открыт" : "закрыт") + (d.toggled ? " (переключён)" : "");
+  else if (d && Object.keys(d).length) t = JSON.stringify(d).slice(0, 140);
+  return '<b>' + esc(ACT[l.action] || l.action) + '</b> · ' + esc(l.admin_name || "—") + (t ? " · " + esc(t) : "");
+}
+
+/* ---------- вход ---------- */
+function gateBox(html) { $("#gateBox").innerHTML = html; }
+function showGate() {
+  $("#shell").hidden = true; $("#gate").hidden = false;
+  gateBox('<svg viewBox="0 0 120 120" style="width:64px;height:64px;color:#fff;margin-bottom:18px" aria-hidden="true"><use href="#emb"/></svg><h3 style="font-size:22px;margin-bottom:10px">Админ-панель EVU</h3><p style="margin:0 auto 24px;color:#aaa">Доступ только для уполномоченных администраторов. Права проверяются на сервере по вашему Discord ID.</p><button class="btn solid" id="lg" type="button">Войти через Discord</button>');
+  $("#lg").onclick = async function () { var u = await api.login("admin"); if (u) boot(); };
+}
+function denied(msg) {
+  $("#shell").hidden = true; $("#gate").hidden = false;
+  gateBox('<h3 style="font-size:22px;margin-bottom:10px">Доступ запрещён</h3><p style="margin:0 auto 24px;color:#aaa">' + esc(msg || "Ваш аккаунт не входит в список администраторов EVU.") + '</p><button class="btn" id="lo" type="button">Выйти</button>');
+  $("#lo").onclick = function () { api.logout("admin"); showGate(); };
+}
+async function boot() {
+  try { await api.init(); } catch (e) {}
+  if (!api.session("admin")) return showGate();
+  try { me = await api.admin("me"); }
+  catch (e) { if (e.code === "unauth") return showGate(); if (e.status === 403 || e.code === "forbidden") return denied(e.message); gateBox('<h3>Нет связи с сервером</h3><p style="margin:12px auto 22px;color:#aaa">' + esc(e.message) + '</p><button class="btn solid" id="rt" type="button">Повторить</button>'); $("#rt").onclick = boot; return; }
+  $("#gate").hidden = true; $("#shell").hidden = false;
+  $("#meName").textContent = me.name; $("#meRole").textContent = "РОЛЬ // " + String(me.role).toUpperCase();
+  go(location.hash.slice(1) || "overview");
+}
+$("#logout").onclick = function () { api.logout("admin"); me = null; showGate(); };
+$("#tabs").onclick = function (e) { var b = e.target.closest(".tab"); if (b) go(b.dataset.t); };
+$("#refresh").onclick = function () { go(tab, true); };
+
+var TT = { overview: "Обзор", apps: "Заявки", logs: "Журнал", settings: "Настройки" };
+function go(t) {
+  if (!TT[t]) t = "overview"; tab = t; history.replaceState(null, "", "#" + t);
+  $$(".tab").forEach(function (b) { b.classList.toggle("on", b.dataset.t === t); }); $("#vt").textContent = TT[t];
+  var v = $("#view"); v.classList.remove("view"); void v.offsetWidth; v.classList.add("view");
+  v.innerHTML = '<div class="box"><div class="skl" style="width:60%"></div><div class="skl"></div><div class="skl" style="width:80%"></div><div class="skl" style="width:40%"></div></div>';
+  ({ overview: vOverview, apps: vApps, logs: vLogs, settings: vSettings })[t]().catch(function (e) { if (e.code === "unauth") { showGate(); return; } v.innerHTML = '<div class="box empty">' + esc(e.message) + '<br><br><button class="btn sm" id="rr" type="button">Повторить</button></div>'; $("#rr").onclick = function () { go(t); }; });
+}
+function setNew(n) { var b = $("#newBd"); b.textContent = n; b.hidden = !n; }
+
+/* ---------- обзор ---------- */
+async function vOverview() {
+  var d = await api.admin("dashboard"), c = d.counts; setPill(d.open); setNew(c.new);
+  var max = Math.max.apply(null, d.series.map(function (s) { return s.n; }).concat([1]));
+  var cards = [["ВСЕГО", c.total], ["НОВЫЕ", c.new], ["НА РАССМОТРЕНИИ", c.review], ["ПРИНЯТО", c.accepted], ["ОТКЛОНЕНО", c.rejected], ["НУЖНА ИНФОРМАЦИЯ", c.info]];
+  $("#view").innerHTML = '<div class="sg">' + cards.map(function (x) { return '<div class="sc2"><small>' + x[0] + '</small><b data-count="' + x[1] + '">0</b></div>'; }).join("") + '<div class="sc2"><small>РЕКРУТИНГ</small><b style="font-size:24px;padding-top:6px;display:block">' + (d.open ? "ОТКРЫТ" : "ЗАКРЫТ") + '</b></div></div>' +
+    '<div class="two"><div class="box"><h3>ЗАЯВКИ ЗА 14 ДНЕЙ</h3><div class="chart" role="img" aria-label="График заявок за 14 дней">' + d.series.map(function (s, i) { return '<i title="' + esc(s.day) + ': ' + s.n + '" style="height:' + Math.max(2, s.n / max * 100) + '%;animation-delay:' + i * 40 + 'ms"></i>'; }).join("") + '</div><div class="cl">' + d.series.map(function (s) { return "<span>" + s.day.slice(8) + "</span>"; }).join("") + '</div></div>' +
+    '<div class="box"><h3>РАСПРЕДЕЛЕНИЕ ПО СТАТУСАМ</h3><div class="dist">' + Object.keys(ST).map(function (k) { return '<div><span>' + esc(ST[k]).toUpperCase() + '</span><s><i data-w="' + (c.total ? c[k] / c.total * 100 : 0) + '"></i></s><span>' + c[k] + '</span></div>'; }).join("") + '</div></div></div>' +
+    '<div class="two"><div class="box"><h3>ПОСЛЕДНИЕ ЗАЯВКИ</h3>' + (d.recent.length ? d.recent.map(function (a) { return '<div class="row click" tabindex="0" data-open="' + esc(a.id) + '"><span>' + esc(a.roblox) + ' <small>' + esc(a.discord_name) + '</small></span>' + bdg(a.status) + '</div>'; }).join("") : '<div class="empty">Заявок пока нет</div>') + '</div>' +
+    '<div class="box"><h3>ПОСЛЕДНИЕ ДЕЙСТВИЯ</h3>' + (d.logs.length ? d.logs.map(function (l) { return '<div class="row"><span>' + logLine(l) + '</span><small>' + esc(X.fmtDate(l.created_at)) + '</small></div>'; }).join("") : '<div class="empty">Действий пока нет</div>') + '</div></div>';
+  $$("[data-count]").forEach(X.count);
+  requestAnimationFrame(function () { $$(".dist i").forEach(function (i) { i.style.width = i.dataset.w + "%"; }); });
+  $$("[data-open]").forEach(function (r) { r.onclick = function () { openApp(r.dataset.open); }; r.onkeydown = function (e) { if (e.key === "Enter") openApp(r.dataset.open); }; });
+}
+
+/* ---------- заявки ---------- */
+async function vApps() {
+  var r = await api.admin("list"); apps = r.items || []; setNew(apps.filter(function (a) { return a.status === "new"; }).length);
+  $("#view").innerHTML = '<div class="tools"><input class="inp grow" id="q" type="search" placeholder="Поиск по Roblox и Discord" aria-label="Поиск" value="' + esc(F.q) + '"><select class="inp" id="fs" aria-label="Статус"><option value="all">Все статусы</option>' + Object.keys(ST).map(function (k) { return '<option value="' + k + '"' + (F.st === k ? " selected" : "") + ">" + ST[k] + "</option>"; }).join("") + '</select><select class="inp" id="so" aria-label="Сортировка"><option value="desc"' + (F.sort === "desc" ? " selected" : "") + '>Сначала новые</option><option value="asc"' + (F.sort === "asc" ? " selected" : "") + '>Сначала старые</option></select></div>' +
+    '<div class="tools"><button class="btn sm" id="ecsv" type="button">Экспорт CSV</button><button class="btn sm" id="ejson" type="button">Экспорт JSON</button>' + (can(3) ? '<button class="btn sm" id="imp" type="button">Импорт JSON</button>' : "") + '<span class="mono" id="cnt" style="font-size:11px;letter-spacing:.14em;color:#8e8e8e;margin-left:auto"></span></div><div id="bulk"></div><div class="tw" id="tbl"></div>';
+  $("#q").oninput = function () { F.q = this.value; draw(); }; $("#fs").onchange = function () { F.st = this.value; draw(); }; $("#so").onchange = function () { F.sort = this.value; draw(); };
+  $("#ecsv").onclick = function () { exp("csv"); }; $("#ejson").onclick = function () { exp("json"); }; if ($("#imp")) $("#imp").onclick = importM;
+  draw();
+}
+function filtered() {
+  var q = F.q.trim().toLowerCase();
+  return apps.filter(function (a) { return (F.st === "all" || a.status === F.st) && (!q || (a.roblox + " " + a.discord_name + " " + a.discord_id).toLowerCase().indexOf(q) >= 0); })
+    .sort(function (a, b) { return F.sort === "desc" ? (a.created_at < b.created_at ? 1 : -1) : (a.created_at > b.created_at ? 1 : -1); });
+}
+function draw() {
+  var list = filtered(), n = Object.keys(SEL).filter(function (k) { return apps.some(function (a) { return a.id === k; }); });
+  $("#cnt").textContent = "ПОКАЗАНО: " + list.length + " ИЗ " + apps.length;
+  var t = $("#tbl");
+  if (!list.length) { t.innerHTML = '<div class="empty">' + (apps.length ? "По вашему запросу заявок не найдено." : "Заявок пока нет.") + "</div>"; }
+  else t.innerHTML = '<table><thead><tr><th class="chk"><input type="checkbox" id="all" aria-label="Выбрать все"' + (list.every(function (a) { return SEL[a.id]; }) ? " checked" : "") + '></th><th>Дата</th><th>Roblox</th><th>Discord</th><th>Статус</th><th>Роль</th><th>Оценка</th></tr></thead><tbody>' +
+    list.map(function (a) { var s = X.score(a.answers); return '<tr tabindex="0" data-id="' + esc(a.id) + '"><td class="chk"><input type="checkbox" data-sel="' + esc(a.id) + '" aria-label="Выбрать"' + (SEL[a.id] ? " checked" : "") + '></td><td>' + esc(X.fmtDate(a.created_at)) + '</td><td>' + esc(a.roblox) + '</td><td>' + esc(a.discord_name) + '</td><td>' + bdg(a.status) + '</td><td class="mono" style="font-size:11px">' + (RS[a.role_status] || "—") + '</td><td class="mono" style="font-size:12px">' + s.comp + "% / " + s.content + "%" + (s.flags.length ? " ⚑" + s.flags.length : "") + "</td></tr>"; }).join("") + "</tbody></table>";
+  var b = $("#bulk");
+  b.innerHTML = n.length ? '<div class="bulk"><span>ВЫБРАНО: ' + n.length + '</span>' + (can(2) ? '<button class="btn sm" id="bst" type="button">Сменить статус</button>' : "") + (can(3) ? '<button class="btn sm dim" id="bdel" type="button">Удалить</button>' : "") + '<button class="btn sm dim" id="bclr" type="button">Снять выбор</button></div>' : "";
+  if (n.length) { if ($("#bst")) $("#bst").onclick = bulkStatus; if ($("#bdel")) $("#bdel").onclick = bulkDel; $("#bclr").onclick = function () { SEL = {}; draw(); }; }
+  var all = $("#all"); if (all) all.onchange = function () { list.forEach(function (a) { if (all.checked) SEL[a.id] = 1; else delete SEL[a.id]; }); draw(); };
+  $$("[data-sel]", t).forEach(function (c) { c.onclick = function (e) { e.stopPropagation(); if (c.checked) SEL[c.dataset.sel] = 1; else delete SEL[c.dataset.sel]; draw(); }; });
+  $$("tbody tr", t).forEach(function (r) { r.onclick = function () { openApp(r.dataset.id); }; r.onkeydown = function (e) { if (e.key === "Enter") openApp(r.dataset.id); }; });
+}
+function selIds() { return Object.keys(SEL).filter(function (k) { return apps.some(function (a) { return a.id === k; }); }); }
+async function bulkStatus() {
+  var ids = selIds();
+  var v = await X.modal({ title: "Сменить статус (" + ids.length + ")", html: '<div class="fld"><label for="bs">Новый статус</label><select class="inp" id="bs">' + Object.keys(ST).map(function (k) { return '<option value="' + k + '">' + ST[k] + "</option>"; }).join("") + '</select></div><p style="margin-top:12px;color:#8e8e8e;font-size:14px">Для статуса «Принята» система попытается выдать роль EVU каждому кандидату.</p>', buttons: [{ label: "Отмена", value: null }, { label: "Применить", cls: "solid", onClick: function (el) { return $("#bs", el).value; } }] });
+  if (!v) return;
+  try { var r = await api.admin("bulk_status", { ids: ids, status: v }); SEL = {}; var bad = (r.results || []).filter(function (x) { return x.role_status === "failed"; }).length; X.toast("Статус изменён у " + ids.length + " заявок." + (bad ? " Ошибок выдачи роли: " + bad : "")); if (bad) X.toast("Откройте заявку и повторите выдачу роли.", true); go("apps"); } catch (e) { er(e); }
+}
+async function bulkDel() {
+  var ids = selIds(); if (!await X.confirmBox("Удалить заявки?", "Будет безвозвратно удалено заявок: " + ids.length + ". Ограничение на повторную подачу у кандидатов сохранится.", "Удалить")) return;
+  try { await api.admin("delete", { ids: ids }); SEL = {}; X.toast("Удалено заявок: " + ids.length); go("apps"); } catch (e) { er(e); }
+}
+function dl(name, type, text) { var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: type })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
+function exp(kind) {
+  var ids = selIds(), list = ids.length ? apps.filter(function (a) { return SEL[a.id]; }) : filtered();
+  if (!list.length) { X.toast("Нет заявок для экспорта.", true); return; }
+  var stamp = new Date().toISOString().slice(0, 10);
+  if (kind === "json") { dl("evu-applications-" + stamp + ".json", "application/json", JSON.stringify(list, null, 2)); X.toast("Экспортировано заявок: " + list.length); return; }
+  var cell = function (v) { v = String(v == null ? "" : v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return '"' + v.replace(/"/g, '""') + '"'; };
+  var head = ["id", "created_at", "status", "roblox", "discord_id", "discord_name"].concat(X.QSORT.map(function (q) { return "Q" + X.QN(q) + " " + q.l; }));
+  var rows = list.map(function (a) { return [a.id, a.created_at, ST[a.status], a.roblox, a.discord_id, a.discord_name].concat(X.QSORT.map(function (q) { return a.answers[q.id]; })).map(cell).join(","); });
+  dl("evu-applications-" + stamp + ".csv", "text/csv;charset=utf-8", "\ufeff" + head.map(cell).join(",") + "\r\n" + rows.join("\r\n")); X.toast("Экспортировано заявок: " + list.length);
+}
+async function importM() {
+  var items = null;
+  var v = await X.modal({ title: "Импорт заявок из JSON", wide: false, html: '<p style="margin-bottom:12px;color:#aaa;font-size:14px">Формат: массив объектов с полями roblox, discord_id, discord_name, status, created_at и answers (q1…q20), как в экспорте JSON.</p><div class="fld"><label for="jf">Файл JSON</label><input class="inp" type="file" id="jf" accept=".json,application/json"></div><div class="fld" style="margin-top:12px"><label for="jt">Или вставьте JSON</label><textarea class="inp" id="jt"></textarea></div><div id="jm" class="mono" style="font-size:12px;margin-top:10px;color:#8e8e8e"></div>',
+    buttons: [{ label: "Отмена", value: null }, { label: "Импортировать", cls: "solid", onClick: function (el) { var j = parse(el); if (!j) return false; items = j; return true; } }],
+    onOpen: function (el) { $("#jf", el).onchange = function () { var f = this.files[0]; if (!f) return; if (f.size > 5e6) { X.toast("Файл слишком большой (максимум 5 МБ).", true); return; } var r = new FileReader(); r.onload = function () { $("#jt", el).value = r.result; parse(el); }; r.readAsText(f); }; $("#jt", el).oninput = function () { parse(el); }; } });
+  function parse(el) { try { var j = JSON.parse($("#jt", el).value); if (j && !Array.isArray(j) && j.items) j = j.items; if (!Array.isArray(j) || !j.length) throw 0; if (j.length > 500) { $("#jm", el).textContent = "Слишком много записей (максимум 500 за раз)."; return null; } $("#jm", el).textContent = "Найдено записей: " + j.length; return j; } catch (e) { $("#jm", el).textContent = "Некорректный JSON: ожидается непустой массив заявок."; return null; } }
+  if (!v || !items) return;
+  try { var r = await api.admin("import", { items: items }); X.toast("Импортировано: " + r.imported + ", пропущено: " + r.skipped); go("apps"); } catch (e) { er(e); }
+}
+
+/* ---------- карточка заявки ---------- */
+function allText(a) { return "ЗАЯВКА EVU #" + a.id.slice(0, 8) + "\nСтатус: " + ST[a.status] + "\nДата: " + X.fmtDate(a.created_at) + "\nRoblox: " + a.roblox + "\nDiscord: " + a.discord_name + " (" + a.discord_id + ")\n\n" + X.QSORT.map(function (q) { return X.QN(q) + ". " + q.l + "\n" + (a.answers[q.id] || "—"); }).join("\n\n"); }
+async function openApp(id) {
+  var data; try { data = await api.admin("get", { id: id }); } catch (e) { er(e); return; }
+  var changed = false;
+  await X.modal({ title: "Заявка #" + id.slice(0, 8).toUpperCase(), wide: true, html: '<div id="dt"></div>', buttons: [{ label: "Закрыть", value: 1 }],
+    onOpen: function (el, close) {
+      var a = data.app, logs = data.logs;
+      function render() {
+        var s = X.score(a.answers), rs = a.role_status;
+        $("#dt", el).innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' + bdg(a.status) + (a.status === "accepted" ? '<span class="bdg ' + (rs === "granted" ? "accepted" : "") + '">РОЛЬ: ' + (RS[rs] || "—") + "</span>" : "") + '</div>' +
+          '<div class="kv"><div><small>ROBLOX</small><span>' + esc(a.roblox) + '</span></div><div><small>DISCORD</small><span>' + esc(a.discord_name) + '</span></div><div><small>DISCORD ID</small><span>' + esc(a.discord_id) + '</span></div><div><small>ПОДАНА</small><span>' + esc(X.fmtDate(a.created_at)) + '</span></div><div><small>РАССМОТРЕЛ</small><span>' + esc(a.reviewed_by ? a.reviewed_by + " · " + X.fmtDate(a.reviewed_at) : "—") + '</span></div></div>' +
+          (can(2) ? '<div class="stbtns"><button class="btn sm solid" data-st="accepted" type="button">Принять</button><button class="btn sm" data-st="rejected" type="button">Отклонить</button><button class="btn sm" data-st="info" type="button">Нужна информация</button><button class="btn sm dim" data-st="review" type="button">' + (a.status === "accepted" || a.status === "rejected" ? "Вернуть на рассмотрение" : "На рассмотрение") + '</button></div>' : '<p class="mono" style="font-size:11px;color:#8e8e8e;margin:10px 0">ТОЛЬКО ПРОСМОТР: ваша роль не позволяет менять статусы.</p>') +
+          (a.status === "accepted" && rs !== "granted" ? '<div class="flag"><b>ROLE</b><span>' + (rs === "failed" ? "Не удалось выдать роль: " + esc(a.role_error || "неизвестная ошибка") : "Роль ещё не выдана.") + (can(2) ? ' <button class="btn sm" data-retry type="button" style="margin-left:10px">Повторить выдачу</button>' : "") + "</span></div>" : "") +
+          '<div class="box" style="margin:18px 0"><h3>ВСПОМОГАТЕЛЬНАЯ ОЦЕНКА АНКЕТЫ</h3><div class="mono" style="font-size:11px;letter-spacing:.14em;color:#8e8e8e">ЗАПОЛНЕННОСТЬ — ' + s.comp + '%</div><div class="meter"><i style="width:' + s.comp + '%"></i></div><div class="mono" style="font-size:11px;letter-spacing:.14em;color:#8e8e8e">СОДЕРЖАТЕЛЬНОСТЬ ОТВЕТОВ — ' + s.content + '%</div><div class="meter"><i style="width:' + s.content + '%"></i></div>' +
+          (s.flags.length ? s.flags.map(function (f) { return '<div class="flag"><b>⚑</b><span>' + esc(f) + "</span></div>"; }).join("") : '<div class="flag"><b>✓</b><span>Автоматических замечаний нет.</span></div>') + '<p style="margin-top:12px;font-size:13px;color:#8e8e8e">Оценка основана на длине и повторяемости ответов и не является проверкой авторства или детектором ИИ. Решение принимает администратор.</p></div>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin:18px 0 8px"><h3 style="font-size:14px;letter-spacing:.2em">АНКЕТА</h3><button class="btn sm" data-all type="button">Скопировать всю анкету</button></div><div class="ans">' + X.QSORT.map(function (q) { return '<div class="an"><small>' + X.QN(q) + ". " + esc(q.l).toUpperCase() + '</small><div>' + (esc(a.answers[q.id]) || '<span style="color:#585858">— не заполнено —</span>') + '</div><button class="cpy" data-cp="' + q.id + '" type="button">COPY</button></div>'; }).join("") + "</div>" +
+          '<h3 style="font-size:14px;letter-spacing:.2em;margin:22px 0 6px">ВНУТРЕННИЕ ЗАМЕТКИ</h3>' + ((a.notes || []).length ? a.notes.map(function (n) { return '<div class="note"><small>' + esc(n.by) + " · " + esc(X.fmtDate(n.at)) + "</small>" + esc(n.text) + "</div>"; }).join("") : '<div class="empty" style="padding:16px">Заметок пока нет</div>') +
+          (can(2) ? '<div class="fld" style="margin-top:12px"><label for="nt">Новая заметка</label><textarea class="inp" id="nt" style="min-height:80px" maxlength="2000"></textarea></div><button class="btn sm" data-note type="button" style="margin-top:10px">Добавить заметку</button>' : "") +
+          '<h3 style="font-size:14px;letter-spacing:.2em;margin:22px 0 10px">ИСТОРИЯ ДЕЙСТВИЙ</h3><div class="hist">' + (logs.length ? logs.map(function (l) { return "<div>" + logLine(l) + "<small>" + esc(X.fmtDate(l.created_at)) + "</small></div>"; }).join("") : "<div>История пуста</div>") + "</div>" +
+          (can(3) ? '<p style="margin-top:24px"><button class="btn sm dim" data-del type="button">Удалить заявку</button></p>' : "");
+        bind();
+      }
+      async function refetch() { try { data = await api.admin("get", { id: id }); a = data.app; logs = data.logs; changed = true; render(); } catch (e) { er(e); } }
+      function bind() {
+        $$("[data-cp]", el).forEach(function (b) { b.onclick = function () { X.copyText(a.answers[b.dataset.cp] || "").then(function () { X.toast("Скопировано"); }, function () { X.toast("Не удалось скопировать", true); }); }; });
+        $("[data-all]", el).onclick = function () { X.copyText(allText(a)).then(function () { X.toast("Анкета скопирована"); }, function () { X.toast("Не удалось скопировать", true); }); };
+        $$("[data-st]", el).forEach(function (b) { b.onclick = async function () {
+          var st = b.dataset.st, note = null;
+          var v = await X.modal({ title: ST[st] + ": подтверждение", html: '<p>' + (st === "accepted" ? "Кандидату будет присвоен статус «Принята», затем система попытается выдать роль EVU в Discord." : "Статус заявки будет изменён на «" + ST[st] + "».") + '</p><div class="fld" style="margin-top:14px"><label for="sn">Комментарий (необязательно)</label><textarea class="inp" id="sn" style="min-height:80px" maxlength="2000"></textarea></div>', buttons: [{ label: "Отмена", value: null }, { label: "Подтвердить", cls: "solid", onClick: function (m) { return { note: $("#sn", m).value.trim() }; } }] });
+          if (!v) return; b.disabled = true;
+          try { var r = await api.admin("set_status", { id: id, status: st, note: v.note }); if (st === "accepted") { if (r.role && r.role.ok) X.toast("Принята. Роль EVU выдана" + (r.role.demo ? " (демо)" : "") + "."); else X.toast("Принята, но роль выдать не удалось: " + (r.role && r.role.error || "см. заявку"), true); } else X.toast("Статус: " + ST[st]); await refetch(); } catch (e) { er(e); b.disabled = false; }
+        }; });
+        var rt = $("[data-retry]", el); if (rt) rt.onclick = async function () { rt.disabled = true; try { var r = await api.admin("retry_role", { id: id }); X.toast(r.role && r.role.ok ? "Роль выдана." : "Не удалось: " + (r.role && r.role.error), !(r.role && r.role.ok)); await refetch(); } catch (e) { er(e); rt.disabled = false; } };
+        var nb = $("[data-note]", el); if (nb) nb.onclick = async function () { var t = $("#nt", el).value.trim(); if (!t) { X.toast("Введите текст заметки.", true); return; } nb.disabled = true; try { await api.admin("add_note", { id: id, text: t }); X.toast("Заметка добавлена"); await refetch(); } catch (e) { er(e); nb.disabled = false; } };
+        var db = $("[data-del]", el); if (db) db.onclick = async function () { if (!await X.confirmBox("Удалить заявку?", "Заявка кандидата " + a.roblox + " будет безвозвратно удалена. Ограничение на повторную подачу сохранится.", "Удалить")) return; try { await api.admin("delete", { ids: [id] }); X.toast("Заявка удалена"); changed = true; close(1); } catch (e) { er(e); } };
+      }
+      render();
+    } });
+  if (changed) go(tab);
+}
+
+/* ---------- журнал ---------- */
+async function vLogs() {
+  var r = await api.admin("logs", { limit: 300 }), items = r.items || [];
+  $("#view").innerHTML = '<div class="tools"><input class="inp grow" id="lq" type="search" placeholder="Поиск по журналу" aria-label="Поиск по журналу"></div><div class="box" id="ll"></div>';
+  function d() { var q = $("#lq").value.trim().toLowerCase(), l = items.filter(function (x) { return !q || (logLine(x) + " " + (x.application_id || "")).toLowerCase().indexOf(q) >= 0; }); $("#ll").innerHTML = l.length ? l.map(function (x) { return '<div class="row' + (x.application_id ? " click" : "") + '" ' + (x.application_id ? 'data-open="' + esc(x.application_id) + '" tabindex="0"' : "") + "><span>" + logLine(x) + "</span><small>" + esc(X.fmtDate(x.created_at)) + "</small></div>"; }).join("") : '<div class="empty">Записей нет</div>'; $$("[data-open]", $("#ll")).forEach(function (e) { e.onclick = function () { openApp(e.dataset.open); }; e.onkeydown = function (ev) { if (ev.key === "Enter") openApp(e.dataset.open); }; }); }
+  $("#lq").oninput = d; d();
+}
+
+/* ---------- настройки ---------- */
+var NT = [["notify_new", "Новая заявка", "Сообщение в Discord при поступлении заявки"], ["notify_accepted", "Заявка принята", "Сообщение при принятии кандидата"], ["notify_rejected", "Заявка отклонена", "Сообщение при отклонении"], ["notify_toggle", "Открытие и закрытие набора", "Сообщение при смене статуса рекрутинга"], ["notify_error", "Ошибки обработки", "Сообщение при сбое обработки заявки или выдачи роли"]];
+async function vSettings() {
+  var r = await api.admin("get_settings"); settings = Object.assign({}, X.DEFAULTS, r.settings); setPill(settings.recruitment_open);
+  var ro = !can(3), d = ro ? " disabled" : "";
+  function sw(k, t, s) { return '<div class="tgl"><button type="button" class="sw" role="switch" aria-checked="' + !!settings[k] + '" data-sw="' + k + '" aria-label="' + esc(t) + '"' + d + '></button><div><b>' + esc(t) + '</b><small>' + esc(s) + "</small></div></div>"; }
+  $("#view").innerHTML = (ro ? '<div class="flag" style="margin-bottom:16px"><b>i</b><span>Изменять настройки может только роль owner. Вы можете просматривать их.</span></div>' : "") +
+    '<div class="two"><div class="box"><h3>УПРАВЛЕНИЕ НАБОРОМ</h3>' + sw("recruitment_open", "Рекрутинг открыт", "Если выключено, подача заявок отключена, а кандидаты видят сообщение о закрытии") +
+    '<div class="sform" style="margin-top:14px"><div class="fld"><label for="s_c">Сообщение о закрытии набора</label><textarea class="inp" id="s_c" maxlength="600"' + d + ">" + esc(settings.closed_message) + '</textarea></div><div class="fld"><label for="s_s">Текст успешной отправки</label><textarea class="inp" id="s_s" maxlength="600"' + d + ">" + esc(settings.success_message) + '</textarea></div><div class="fld"><label for="s_r">Правила и требования подачи (каждая строка — пункт)</label><textarea class="inp" id="s_r" style="min-height:150px" maxlength="2000"' + d + ">" + esc(settings.rules_text) + '</textarea></div><div class="fld"><label for="s_a">Минимальный возраст (0 — без ограничения)</label><input class="inp" id="s_a" inputmode="numeric" value="' + esc(settings.min_age) + '"' + d + "></div></div></div>" +
+    '<div class="box"><h3>УВЕДОМЛЕНИЯ DISCORD</h3>' + NT.map(function (n) { return sw(n[0], n[1], n[2]); }).join("") + '<h3 style="margin-top:26px">ИНТЕГРАЦИИ</h3><p style="font-size:14px;color:#aaa;margin-bottom:12px">Проверка соединения с базой, Discord-ботом, ролью EVU и webhook.</p><button class="btn sm" id="tst" type="button"' + d + '>Проверить соединение</button><div id="tres" style="margin-top:14px"></div></div></div>' +
+    '<button class="btn solid" id="sv" type="button"' + d + ">Сохранить настройки</button>";
+  $$("[data-sw]").forEach(function (b) { b.onclick = function () { var v = b.getAttribute("aria-checked") !== "true"; b.setAttribute("aria-checked", v); settings[b.dataset.sw] = v; }; });
+  $("#sv").onclick = async function () {
+    var age = parseInt($("#s_a").value, 10); if (isNaN(age) || age < 0 || age > 99) { X.toast("Минимальный возраст: число от 0 до 99.", true); return; }
+    var s = Object.assign({}, settings, { closed_message: $("#s_c").value.trim(), success_message: $("#s_s").value.trim(), rules_text: $("#s_r").value.trim(), min_age: age });
+    if (!s.closed_message || !s.success_message) { X.toast("Тексты сообщений не могут быть пустыми.", true); return; }
+    if (s.recruitment_open !== (r.settings.recruitment_open)) { if (!await X.confirmBox(s.recruitment_open ? "Открыть рекрутинг?" : "Закрыть рекрутинг?", s.recruitment_open ? "Кандидаты смогут подавать заявки." : "Подача заявок будет отключена.", "Подтвердить")) return; }
+    this.disabled = true; try { await api.admin("set_settings", { settings: s }); X.toast("Настройки сохранены"); go("settings"); } catch (e) { er(e); this.disabled = false; }
+  };
+  var t = $("#tst"); t.onclick = async function () {
+    t.disabled = true; $("#tres").innerHTML = '<div class="skl"></div><div class="skl"></div>';
+    try { var c = await api.admin("test"); $("#tres").innerHTML = c.checks.map(function (x) { return '<div class="res ' + (x.ok ? "ok" : "no") + '"><b>' + (x.ok ? "OK" : "FAIL") + '</b><span><b style="width:auto;color:#fff">' + esc(x.name) + "</b><br>" + esc(x.detail) + "</span></div>"; }).join(""); } catch (e) { $("#tres").innerHTML = ""; er(e); }
+    t.disabled = false;
+  };
+}
+boot();
+})();
+</script>
+</body>
+</html>
