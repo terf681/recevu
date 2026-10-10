@@ -286,4 +286,18 @@ async function submit() {
     if (e.code === "locked") { user && cooldown(e.data && e.data.locked_until || new Date(Date.now() + 14 * 864e5).toISOString()); return; }
     if (e.code === "closed") { setStatus(false); closed(e.data && e.data.message); return; }
     if (e.code === "unauth") { X.toast(e.message, true); user = null; gate(); return; }
-    if (e
+    if (e.code === "validation" && e.data && e.data.errors) { var k = Object.keys(e.data.errors)[0], qq = Q.filter(function (x) { return x.id === k; })[0]; if (qq) { step = qq.s; form(); showStep(e.data.errors); } X.toast("Сервер отклонил часть ответов. Проверьте поля.", true); return; }
+    var again = await X.modal({ title: "Не удалось отправить заявку", html: "<p>" + esc(e.message || "Ошибка соединения.") + "</p><p style='margin-top:10px;color:#8e8e8e'>Ваши ответы сохранены в черновике.</p>", buttons: [{ label: "Закрыть", value: false }, { label: "Повторить", cls: "solid", value: true }] });
+    if (again) submit();
+  }
+}
+function done(r) {
+  clearInterval(timer);
+  root.innerHTML = '<div class="state">' + ico(ICO.ok) + '<div class="who">ЗАЯВКА // <b>#' + esc(String(r.id || "").slice(0, 8).toUpperCase()) + '</b></div><h3>Заявка отправлена</h3><p>' + esc(S.success_message) + '</p><p class="mono" style="font-size:12px;letter-spacing:.14em;color:#8e8e8e">ПОВТОРНАЯ ПОДАЧА ДОСТУПНА ЧЕРЕЗ 14 ДНЕЙ</p></div>';
+  scrollTop();
+}
+load();
+})();
+</script>
+</body>
+</html>
