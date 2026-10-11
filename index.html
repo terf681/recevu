@@ -171,10 +171,7 @@ async function load() {
   try { await api.init(); S = await api.settings(); } catch (e) { return fail(e); }
   setStatus(S.recruitment_open);
   $("#reqList").innerHTML = String(S.rules_text || "").split("\n").map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) { return "<li>" + esc(l) + "</li>"; }).join("") + (S.min_age > 0 ? "<li>Минимальный возраст: " + S.min_age + "</li>" : "");
-  
-  // ВРЕМЕННО: берём пользователя из ручного ввода (sessionStorage)
-  try { user = JSON.parse(sessionStorage.getItem("evu_manual_user") || "null"); } catch (e) { user = null; }
-  
+  user = api.session("cand");
   if (!S.recruitment_open && !user) return closed(S.closed_message);
   if (!user) return gate();
   try { st = await api.status(); } catch (e) { if (e.code === "unauth") { user = null; return gate(); } return fail(e); }
@@ -193,15 +190,8 @@ function closed(msg) {
 }
 function gate() {
   clearInterval(timer);
-  root.innerHTML = '<div class="state">' + ico(ICO.user) + '<h3>Укажите ваш Discord ID</h3><p>Вход через Discord временно недоступен. Пожалуйста, введите ваш Discord ID и ник вручную — они нужны для выдачи роли и связи с вами.</p><div class="fld" style="max-width:400px;margin:20px auto"><label for="manual_did">Ваш Discord ID (только цифры)</label><input class="inp" id="manual_did" inputmode="numeric" placeholder="Например: 123456789012345678" autocomplete="off"></div><div class="fld" style="max-width:400px;margin:20px auto"><label for="manual_name">Ваш ник в Discord</label><input class="inp" id="manual_name" placeholder="Например: balefire_x_" autocomplete="off"></div><button class="btn solid" id="lg" type="button">Продолжить</button></div>';
-  $("#lg").onclick = function () {
-    var did = $("#manual_did").value.trim();
-    var name = $("#manual_name").value.trim();
-    if (!/^\d{17,20}$/.test(did)) { X.toast("Discord ID должен состоять из 17–20 цифр.", true); return; }
-    if (name.length < 2) { X.toast("Введите ваш ник в Discord.", true); return; }
-    sessionStorage.setItem("evu_manual_user", JSON.stringify({ discord_id: did, name: name }));
-    load();
-  };
+  root.innerHTML = '<div class="state">' + ico(ICO.user) + '<h3>Вход через Discord</h3><p>Анкета привязывается к вашему аккаунту Discord. Это нужно для проверки личности кандидата и ограничения повторной подачи.' + (X.LIVE ? "" : " (Демо-режим: вход имитируется.)") + '</p><button class="btn solid" id="lg" type="button">Войти через Discord</button></div>';
+  $("#lg").onclick = async function () { var u = await api.login("cand"); if (u) load(); };
 }
 function cooldown(until) {
   clearInterval(timer);
@@ -209,7 +199,7 @@ function cooldown(until) {
   var t = new Date(until).getTime();
   function tick() { var l = t - Date.now(); $("#cd").textContent = X.fmtLeft(l); if (l <= 0) { clearInterval(timer); load(); } }
   tick(); timer = setInterval(tick, 1000);
-  $("#lo").onclick = function () { sessionStorage.removeItem("evu_manual_user"); load(); };
+  $("#lo").onclick = function () { api.logout("cand"); load(); };
 }
 
 /* ---------- анкета ---------- */
@@ -226,7 +216,7 @@ function draftSave() {
 function pct() { var n = 0; Q.forEach(function (q) { if (String(ans[q.id] || "").trim()) n++; }); return Math.round(n / Q.length * 100); }
 function fieldHtml(q) {
   var v = ans[q.id] || "", id = "f_" + q.id, c, hint = q.h ? '<div class="hint">' + esc(q.h) + '</div>' : "";
-  if (q.t === "discord") { c = '<input class="inp" id="' + id + '" value="' + esc(user.name) + '" readonly aria-readonly="true">'; hint = '<div class="hint">Ваш Discord ID: ' + esc(user.discord_id) + '</div>'; }
+  if (q.t === "discord") { c = '<input class="inp" id="' + id + '" value="' + esc(user.name) + '" readonly aria-readonly="true">'; hint = '<div class="hint">Получено из вашего аккаунта Discord. ID: ' + esc(user.discord_id) + '</div>'; }
   else if (q.t === "area") c = '<textarea class="inp" id="' + id + '" maxlength="' + q.max + '" data-q="' + q.id + '">' + esc(v) + '</textarea><div class="cnt" id="c_' + q.id + '">' + v.length + ' / ' + q.max + (q.min ? ' · минимум ' + q.min : '') + '</div>';
   else if (q.t === "tz") c = '<select class="inp" id="' + id + '" data-q="' + q.id + '"><option value="">Выберите часовой пояс</option>' + X.TZ.map(function (z) { return '<option' + (z === v ? " selected" : "") + '>' + z + '</option>'; }).join("") + '</select>';
   else c = '<input class="inp" id="' + id + '" data-q="' + q.id + '" value="' + esc(v) + '" maxlength="' + q.max + '"' + (q.t === "number" ? ' inputmode="numeric" autocomplete="off"' : ' autocomplete="off"') + (q.ph ? ' placeholder="' + esc(q.ph) + '"' : "") + '>';
@@ -240,7 +230,7 @@ function form() {
     '<div class="fields" id="fields">' + Q.filter(function (q) { return q.s === step; }).map(fieldHtml).join("") + '</div>' +
     '<div class="fnav"><button class="btn dim" id="bk" type="button"' + (step === 0 ? " disabled" : "") + '>Назад</button><span class="saved" id="saved">ЧЕРНОВИК СОХРАНЯЕТСЯ АВТОМАТИЧЕСКИ</span><button class="btn solid" id="nx" type="button">' + (last ? "Отправить заявку" : "Далее") + '</button></div></div></div>';
   requestAnimationFrame(function () { var p = $("#pb"); if (p) p.style.width = pct() + "%"; });
-  $("#lo").onclick = function () { sessionStorage.removeItem("evu_manual_user"); load(); };
+  $("#lo").onclick = function () { api.logout("cand"); load(); };
   $("#bk").onclick = function () { if (step > 0) { step--; draftSave(); form(); scrollTop(); } };
   $("#nx").onclick = last ? submit : next;
   $$(".stp").forEach(function (b) { b.onclick = function () { var i = +b.dataset.s; if (i <= maxStep && i !== step) { step = i; draftSave(); form(); scrollTop(); } }; });
@@ -277,8 +267,7 @@ async function submit() {
   setTimeout(function () { $("#sbi").style.width = "20%"; }, 30);
   function end() { clearInterval(pt); ov.classList.remove("show"); setTimeout(function () { ov.remove(); if (!$(".ov")) document.body.classList.remove("lock"); }, 300); }
   try {
-    // Отправляем ans + discord_id + discord_name
-    var r = await api.submit(Object.assign({}, ans, { discord_id: user.discord_id, discord_name: user.name })); end();
+    var r = await api.submit(ans); end();
     try { localStorage.removeItem(DK()); } catch (e) {}
     done(r);
   } catch (e) {
